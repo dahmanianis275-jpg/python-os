@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Python OS 3.2 – Hybrid Linux / Windows Simulation
-=================================================
-Educational toy OS with file-extension support, safe open/run,
-restricted real-Python execution, and many extra features.
+Python OS 3.3 – Hybrid Linux / Windows Simulation (Unlimited Edition)
+=====================================================================
+Educational toy OS. File extensions + safe checking still exist,
+but .py files now run with FULL / UNLIMITED real Python power
+(as requested by the user).
 
-Not a real kernel. Runs on top of your host OS.
+Not a real kernel.
 """
 
 import os
@@ -17,18 +18,15 @@ import textwrap
 import json
 import traceback
 from datetime import datetime
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Optional
 
 # ============================================================
 # File Extension / Association System
 # ============================================================
 
 class FileAssociation:
-    """Maps extensions to handlers so the OS can check before opening."""
-
     def __init__(self):
-        # extension -> (description, handler_name, can_execute)
-        self.assoc: Dict[str, tuple] = {
+        self.assoc = {
             ".txt":  ("Plain text",        "text",    False),
             ".md":   ("Markdown text",     "text",    False),
             ".log":  ("Log file",          "text",    False),
@@ -50,17 +48,12 @@ class FileAssociation:
             return "." + filename.rsplit(".", 1)[-1].lower()
         return ""
 
-    def info(self, filename: str) -> tuple:
+    def info(self, filename: str):
         ext = self.get_ext(filename)
         return self.assoc.get(ext, self.assoc[""])
 
-    def can_open(self, filename: str) -> bool:
-        desc, handler, _ = self.info(filename)
-        return handler != "unknown"
-
     def can_execute(self, filename: str) -> bool:
-        _, _, executable = self.info(filename)
-        return executable
+        return self.info(filename)[2]
 
     def list_all(self) -> str:
         lines = ["Registered file associations:", ""]
@@ -124,33 +117,36 @@ class FileSystem:
         ), owner="root", mode="644"))
         etc.add(VFSNode("hostname", content="python-os\n", owner="root", mode="644"))
         etc.add(VFSNode("os-release", content=(
-            'NAME="Python OS"\nVERSION="3.2 (Extensions + Safe Run)"\n'
-            'ID=pythonos\nPRETTY_NAME="Python OS 3.2"\n'
+            'NAME="Python OS"\nVERSION="3.3 (Unlimited Python)"\n'
+            'ID=pythonos\nPRETTY_NAME="Python OS 3.3"\n'
         ), owner="root", mode="644"))
         etc.add(VFSNode("motd", content=(
-            "Python OS 3.2 – Hybrid Linux + Windows + File Extensions\n"
-            "Type 'help', 'games' or 'assoc' to explore.\n"
+            "Python OS 3.3 – Hybrid + File Extensions + UNLIMITED Python\n"
+            "Type 'help', 'games' or 'assoc'.\n"
         ), owner="root", mode="644"))
 
         home = r.add(VFSNode("home", True, owner="root", mode="755"))
         user_home = home.add(VFSNode("user", True, owner="user", mode="755"))
         user_home.add(VFSNode(".bashrc", content="# .bashrc\n", owner="user", mode="644"))
         user_home.add(VFSNode("readme.txt", content=(
-            "Welcome to Python OS 3.2\n"
-            "File extensions are now supported.\n"
-            "Try:  run hello.py   or   file readme.txt\n"
+            "Welcome to Python OS 3.3 (Unlimited)\n"
+            "File extensions are supported.\n"
+            "Python scripts now run with FULL power.\n"
+            "Try:  run hello.py\n"
         ), owner="user", mode="644"))
 
-        # Example Python script that can be executed safely
+        # Example scripts
         user_home.add(VFSNode("hello.py", content=(
             "#!/usr/bin/env python3\n"
-            "print('Hello from a real .py file inside Python OS!')\n"
+            "print('Hello from UNLIMITED Python inside the OS!')\n"
             "print('2 + 2 =', 2 + 2)\n"
+            "import sys\n"
+            "print('Python version:', sys.version.split()[0])\n"
             "for i in range(3):\n"
             "    print('  loop', i)\n"
         ), owner="user", mode="755"))
 
-        user_home.add(VFSNode("data.json", content='{"os": "Python OS", "version": 3.2, "hybrid": true}\n',
+        user_home.add(VFSNode("data.json", content='{"os": "Python OS", "version": 3.3, "unlimited": true}\n',
                               owner="user", mode="644"))
 
         home.add(VFSNode("guest", True, owner="guest", mode="755"))
@@ -165,7 +161,7 @@ class FileSystem:
         r.add(VFSNode("tmp", True, owner="root", mode="1777"))
 
         proc = r.add(VFSNode("proc", True, owner="root", mode="555"))
-        proc.add(VFSNode("version", content="Python OS 3.2 (Extensions)\n", owner="root", mode="444"))
+        proc.add(VFSNode("version", content="Python OS 3.3 (Unlimited)\n", owner="root", mode="444"))
         proc.add(VFSNode("cpuinfo", content="processor\t: 0\nmodel name\t: Python Virtual CPU\n", owner="root", mode="444"))
         proc.add(VFSNode("meminfo", content="MemTotal: 16384000 kB\nMemFree: 8192000 kB\n", owner="root", mode="444"))
 
@@ -336,59 +332,26 @@ class ProcessManager:
 
 
 # ============================================================
-# Restricted Python Execution (connects to real Python safely)
+# UNLIMITED Python Execution (as requested)
 # ============================================================
 
-def restricted_exec(code: str, filename: str = "<script>") -> None:
+def unlimited_exec(code: str, filename: str = "<script>") -> None:
     """
-    Execute Python code with a very limited global namespace.
-    This is how the OS 'connects' to the real Python interpreter
-    without giving a script full host access.
+    Execute Python code with FULL power of the host interpreter.
+    No restrictions. Imports, open(), os, sys, everything is allowed.
     """
-    safe_builtins = {
-        "print": print,
-        "len": len,
-        "range": range,
-        "str": str,
-        "int": int,
-        "float": float,
-        "bool": bool,
-        "list": list,
-        "dict": dict,
-        "tuple": tuple,
-        "set": set,
-        "abs": abs,
-        "min": min,
-        "max": max,
-        "sum": sum,
-        "sorted": sorted,
-        "enumerate": enumerate,
-        "zip": zip,
-        "map": map,
-        "filter": filter,
-        "round": round,
-        "isinstance": isinstance,
-        "type": type,
-        "hasattr": hasattr,
-        "getattr": getattr,
-        "None": None,
-        "True": True,
-        "False": False,
-    }
-
-    # Extremely limited globals – no import, no open, no os, no sys, etc.
-    restricted_globals = {"__builtins__": safe_builtins}
-
     try:
-        compiled = compile(code, filename, "exec")
-        exec(compiled, restricted_globals, {})
+        # Full globals = normal Python environment
+        exec(compile(code, filename, "exec"), globals(), {})
     except Exception as e:
         print(f"[Python OS] Error while running {filename}:")
         print(f"  {type(e).__name__}: {e}")
+        # Optional: uncomment next line if you want full traceback
+        # traceback.print_exc()
 
 
 # ============================================================
-# Games (unchanged core)
+# Games
 # ============================================================
 
 class Games:
@@ -441,7 +404,7 @@ class Games:
     @staticmethod
     def hangman():
         words = ["python", "linux", "kernel", "extension", "filesystem",
-                 "process", "hybrid", "windows", "simulation", "restricted"]
+                 "process", "hybrid", "windows", "unlimited", "simulation"]
         word = random.choice(words)
         guessed = set()
         lives = 7
@@ -537,13 +500,12 @@ class Games:
     @staticmethod
     def fortune():
         fortunes = [
-            "A clean extension table prevents many crashes.",
-            "Check the file type before you open it.",
-            "Restricted exec is your friend.",
-            "There is no cloud, only other people's computers.",
+            "Unlimited power comes with unlimited responsibility.",
+            "Your .py files now have full access.",
+            "There is no sandbox anymore.",
             "sudo make me a sandwich.",
-            "Your next .py will run safely.",
-            "Windows and Linux can coexist inside one Python process.",
+            "Windows and Linux living together in one Python process.",
+            "Check the extension, then run wild.",
         ]
         print("\n" + random.choice(fortunes) + "\n")
 
@@ -593,15 +555,15 @@ class PythonOS:
         return f"{self.current_user}@{self.hostname}:{path}{symbol} "
 
     def boot(self):
-        print("\n[  0.000000] Linux version 6.6.0-pythonos (Extensions Edition)")
+        print("\n[  0.000000] Linux version 6.6.0-pythonos (Unlimited Edition)")
         time.sleep(0.1)
-        print("[  0.500000] Loading file-association table and restricted Python runtime...")
+        print("[  0.500000] Loading file associations + FULL Python runtime...")
         time.sleep(0.2)
-        print("[  1.200000] Multi-user target reached.")
+        print("[  1.200000] Multi-user target reached. Python execution is UNLIMITED.")
         print()
         print(self.fs.cat("/etc/motd"), end="")
-        print(f"Python OS 3.2  {datetime.now().strftime('%a %b %d %H:%M:%S %Y')}")
-        print("Extensions enabled. Try:  file hello.py   or   run hello.py\n")
+        print(f"Python OS 3.3  {datetime.now().strftime('%a %b %d %H:%M:%S %Y')}")
+        print("Try:  run hello.py   (full power)\n")
 
         while self.running:
             try:
@@ -613,9 +575,7 @@ class PythonOS:
                 print("\nlogout")
                 break
 
-    # ---------- Safe file handling ----------
     def safe_open(self, path: str) -> None:
-        """Check extension first, then open appropriately."""
         node = self.fs.resolve(path)
         if node is None:
             print(f"open: {path}: No such file or directory")
@@ -627,9 +587,8 @@ class PythonOS:
         desc, handler, executable = self.assoc.info(path)
 
         if handler == "unknown":
-            print(f"[Python OS] Refused to open '{path}'")
-            print(f"  Reason: unregistered file extension")
-            print(f"  Use 'assoc' to see supported types or 'file {path}' for details.")
+            print(f"[Python OS] Refused to open '{path}' (unknown extension)")
+            print("  Use 'assoc' to see supported types.")
             return
 
         content = node.content
@@ -642,19 +601,17 @@ class PythonOS:
                 print(json.dumps(data, indent=2))
             except json.JSONDecodeError as e:
                 print(f"Invalid JSON: {e}")
-                print("--- raw content ---")
                 print(content)
         elif handler == "python":
-            print(f"[Python OS] '{path}' is a Python script.")
-            print("  Use:  run {0}   or   python {0}".format(path))
+            print(f"[Python OS] '{path}' is a Python script (unlimited).")
+            print(f"  Use:  run {path}   or   python {path}")
         elif handler == "shell":
-            print(f"[Python OS] '{path}' is a shell script (simulated).")
-            print("  Use:  run {0}".format(path))
+            print(f"[Python OS] '{path}' is a shell script.")
+            print(f"  Use:  run {path}")
         else:
             print(content)
 
     def safe_run(self, path: str) -> None:
-        """Check extension + permissions, then execute if allowed."""
         node = self.fs.resolve(path)
         if node is None:
             print(f"run: {path}: No such file or directory")
@@ -666,15 +623,13 @@ class PythonOS:
         desc, handler, executable = self.assoc.info(path)
 
         if not executable:
-            print(f"[Python OS] Cannot execute '{path}'")
-            print(f"  Type: {desc}")
-            print(f"  This extension is not marked as executable.")
-            print(f"  Tip: use 'open {path}' or 'cat {path}' instead.")
+            print(f"[Python OS] Cannot execute '{path}' ({desc})")
+            print(f"  Tip: use 'open {path}' instead.")
             return
 
         content = node.content
 
-        # Shebang handling
+        # Shebang
         first_line = content.splitlines()[0] if content else ""
         if first_line.startswith("#!"):
             if "python" in first_line:
@@ -683,9 +638,9 @@ class PythonOS:
                 handler = "shell"
 
         if handler == "python":
-            print(f"[Python OS] Running {path} with restricted Python interpreter...")
+            print(f"[Python OS] Running {path} with UNLIMITED Python...")
             print("-" * 50)
-            restricted_exec(content, filename=path)
+            unlimited_exec(content, filename=path)
             print("-" * 50)
             print("[Python OS] Script finished.")
         elif handler == "shell":
@@ -695,11 +650,10 @@ class PythonOS:
                 if not line or line.startswith("#"):
                     continue
                 print(f"+ {line}")
-                # very limited simulation
                 if line.startswith("echo "):
                     print(line[5:])
         else:
-            print(f"[Python OS] No runner for handler '{handler}'")
+            print(f"[Python OS] No runner for '{handler}'")
 
     def execute(self, line: str):
         line = line.strip()
@@ -707,12 +661,10 @@ class PythonOS:
             return
         self.history.append(line)
 
-        # Alias
         first = line.split()[0]
         if first in self.aliases:
             line = self.aliases[first] + line[len(first):]
 
-        # Support ./script.py style
         if line.startswith("./"):
             line = "run " + line[2:]
 
@@ -727,7 +679,6 @@ class PythonOS:
         cmd = tokens[0].lower()
         args = tokens[1:]
 
-        # ---- Exit / users ----
         if cmd in ("exit", "logout", "quit"):
             if self.sudo_mode:
                 self.sudo_mode = False
@@ -768,7 +719,6 @@ class PythonOS:
             print(f"uid={u['uid']}({self.current_user}) gid={u['uid']}({self.current_user})")
             return
 
-        # ---- New extension-aware commands ----
         if cmd == "file":
             if not args:
                 print("usage: file <path>")
@@ -776,7 +726,7 @@ class PythonOS:
             path = args[0]
             node = self.fs.resolve(path)
             if node is None:
-                print(f"{path}: cannot open (No such file)")
+                print(f"{path}: cannot open")
                 return
             if node.is_dir:
                 print(f"{path}: directory")
@@ -785,8 +735,6 @@ class PythonOS:
             print(f"{path}: {desc}")
             print(f"  handler   : {handler}")
             print(f"  executable: {'yes' if executable else 'no'}")
-            print(f"  size      : {node.size} bytes")
-            print(f"  owner     : {node.owner}")
             return
 
         if cmd == "assoc":
@@ -810,16 +758,10 @@ class PythonOS:
         if cmd == "python":
             if not args:
                 print("usage: python <file.py>")
-                print("  (runs the file with the restricted Python interpreter)")
                 return
-            path = args[0]
-            if not path.endswith(".py") and not path.endswith(".pyw"):
-                print("[Python OS] Only .py / .pyw files can be passed to 'python'")
-                return
-            self.safe_run(path)
+            self.safe_run(args[0])
             return
 
-        # ---- Classic filesystem ----
         if cmd == "pwd":
             print(self.fs.get_absolute_path())
             return
@@ -838,7 +780,7 @@ class PythonOS:
                     path = a
             items = self.fs.ls(path, long=long)
             if not items and path != ".":
-                print(f"ls: cannot access '{path}': No such file or directory")
+                print(f"ls: cannot access '{path}'")
             else:
                 print("\n".join(items) if long else "  ".join(items))
             return
@@ -847,7 +789,6 @@ class PythonOS:
             if not args:
                 print(f"{cmd}: missing file operand")
                 return
-            # Still allow raw cat, but recommend open for safety
             content = self.fs.cat(args[0])
             if content is None:
                 print(f"{cmd}: {args[0]}: No such file or directory")
@@ -887,7 +828,6 @@ class PythonOS:
                 print(" ".join(args))
             return
 
-        # ---- Process / system ----
         if cmd in ("ps", "tasklist"):
             print(f"{'PID':>6} {'USER':<8} {'%CPU':>5} {'%MEM':>5} COMMAND")
             for p in self.pm.list():
@@ -918,7 +858,7 @@ class PythonOS:
                 if self.pm.kill(pid, "root" if self.is_root() else self.current_user):
                     print(f"Killed {pid}")
                 else:
-                    print(f"kill: ({pid}) - No such process or permission denied")
+                    print(f"kill: ({pid}) - No such process")
             except ValueError:
                 print("kill: invalid argument")
             return
@@ -935,24 +875,21 @@ class PythonOS:
 
         if cmd == "uptime":
             secs = int(time.time() - self.boot_time)
-            print(f" up {secs//60} min,  1 user")
+            print(f" up {secs//60} min")
             return
 
         if cmd in ("neofetch", "screenfetch", "systeminfo"):
             print(textwrap.dedent(f"""
                 {self.current_user}@{self.hostname}
-                OS: Python OS 3.2 (Extensions + Safe Run)
+                OS: Python OS 3.3 (Unlimited Python)
                 Kernel: 6.6.0-pythonos
                 Uptime: {int(time.time()-self.boot_time)} s
-                Shell: bash (simulated)
-                CPU: Python Virtual CPU
-                Memory: 8192 MiB / 16384 MiB
-                Features: file extensions, restricted Python, hybrid commands
+                Features: file extensions + FULL Python power
             """))
             return
 
         if cmd in ("uname", "ver"):
-            print(f"PythonOS {self.hostname} 3.2.0-pythonos #1 SMP Hybrid x86_64")
+            print(f"PythonOS {self.hostname} 3.3.0-pythonos Unlimited")
             return
 
         if cmd == "hostname":
@@ -990,7 +927,6 @@ class PythonOS:
                     print(f"alias {k}='{v}'")
             return
 
-        # ---- Network ----
         if cmd in ("ifconfig", "ipconfig"):
             print("eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500")
             print("        inet 10.0.2.15  netmask 255.255.255.0")
@@ -1007,7 +943,7 @@ class PythonOS:
         if cmd in ("curl", "wget"):
             url = args[0] if args else "http://example.com"
             print(f"* Connected to {url}")
-            print("<html><body><h1>Python OS simulated page</h1></body></html>")
+            print("<html><body><h1>Python OS page</h1></body></html>")
             return
 
         if cmd == "apt":
@@ -1024,11 +960,8 @@ class PythonOS:
                 print(f"E: Invalid operation {sub}")
             return
 
-        # ---- Games ----
         if cmd == "games":
-            print("""
-Games:  guess  rps  hangman  snake  dice  fortune
-""")
+            print("\nGames:  guess  rps  hangman  snake  dice  fortune\n")
             return
 
         if cmd == "guess":
@@ -1051,7 +984,7 @@ Games:  guess  rps  hangman  snake  dice  fortune
             return
 
         if cmd == "cowsay":
-            msg = " ".join(args) if args else "Extensions keep us safe"
+            msg = " ".join(args) if args else "Unlimited mode activated"
             print(f"""
   ___________
 < {msg} >
@@ -1084,22 +1017,18 @@ Games:  guess  rps  hangman  snake  dice  fortune
 
         if cmd == "help":
             print("""
-Python OS 3.2 – Command summary
+Python OS 3.3 – Unlimited Edition
 
-File extensions & safety:
-  file <path>     Show type / extension info
-  assoc           List all registered extensions
-  open <file>     Open safely (checks extension first)
-  run <file>      Execute safely (only allowed extensions)
-  python <file>   Run .py with restricted real Python
-  ./script.py     Same as run script.py
+File extensions:
+  file <path>     Show type
+  assoc           List extensions
+  open <file>     Open safely
+  run <file>      Execute (UNLIMITED for .py)
+  python <file>   Same as run for Python
+  ./script.py     Same as run
 
-Classic + hybrid:
-  ls / dir   cd   pwd   cat / type   mkdir / md   rm / del
-  ps / tasklist   top   kill   free   df   uptime
-  neofetch / systeminfo   uname / ver
-  ifconfig / ipconfig   ping   curl   apt
-  whoami  id  su  sudo  history  clear / cls
+Classic + hybrid commands still work
+(ls/dir, ps/tasklist, ifconfig/ipconfig, etc.)
 
 Games: games  guess  rps  hangman  snake  dice  fortune
 """)
