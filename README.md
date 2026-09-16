@@ -1,15 +1,17 @@
-# Python OS 3.3 – Hybrid Linux / Windows Simulation (Unlimited)
+# Python OS 3.4
 
-**A pure-Python educational operating system simulation** that feels close to real Linux while also supporting many Windows-style commands.
+Hybrid Linux + Windows style operating system written in pure Python.
 
-**Version 3.3 change:** Python script execution is now **unlimited**.  
-`.py` files run with the full power of the host Python interpreter (imports, `open()`, etc. are allowed).
-
-It is still **not** a real kernel. It runs on top of your actual operating system.
+**Features**
+- Full file extension support
+- Unlimited Python script execution
+- Linux + Windows command compatibility
+- Games
+- Virtual filesystem, processes, users, networking simulation
 
 ---
 
-## Quick Start
+## Run
 
 ```bash
 git clone https://github.com/dahmanianis275-jpg/python-os.git
@@ -19,44 +21,39 @@ python python_os.py
 
 ---
 
-## File Extensions & Execution
+## File Extensions
 
-| Extension | Behavior                                      |
-|-----------|-----------------------------------------------|
-| `.py`     | Runs with **full / unlimited** Python power   |
-| `.txt`    | Shown as text                                 |
-| `.json`   | Pretty-printed                                |
-| `.sh`     | Simulated shell                               |
-| others    | Checked and handled or refused cleanly        |
+| Extension | Behavior |
+|-----------|----------|
+| `.py` / `.pyw` | Runs with full unlimited Python |
+| `.txt` `.md` `.log` `.csv` `.cfg` `.ini` `.html` | Opens as text |
+| `.json` | Pretty-prints |
+| `.sh` `.bash` | Simulated shell |
+| Unknown | Refused cleanly |
 
-### Important commands
-
+### Commands for extensions
 ```bash
-file <path>        # show type & extension info
-assoc              # list registered extensions
-open <file>        # open according to type
-run <file>         # execute (unlimited for .py)
-python <file.py>   # same as run for Python files
-./script.py        # same as run script.py
+assoc              # list all extensions
+file <path>        # inspect a file
+open <file>        # open by type
+run <file>         # execute
+python <file.py>   # run Python file
+./script.py        # same as run
 ```
 
 ---
 
-## Hybrid commands
+## Main Commands
 
-Linux style + Windows style (`dir`, `cls`, `ipconfig`, `tasklist`, `systeminfo`, …) + games.
+**Linux style:** `ls` `cd` `pwd` `cat` `mkdir` `rm` `ps` `top` `kill` `apt` ...  
+**Windows style:** `dir` `cls` `ipconfig` `tasklist` `systeminfo` `ver` `type` `del` `md` `rd`
 
----
-
-## Warning
-
-Because execution is now unlimited, a `.py` file you run inside the simulation has the **same power** as any normal Python script on your machine.  
-Only run code you trust.
+**Games:** `games` `guess` `rps` `hangman` `snake` `dice` `fortune`
 
 ---
 
 ## License
 
-MIT License
+MIT
 
 **https://github.com/dahmanianis275-jpg/python-os**
