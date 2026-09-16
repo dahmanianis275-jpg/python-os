@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Python OS 3.1 – Hybrid Linux / Windows Simulation
+Python OS 3.2 – Hybrid Linux / Windows Simulation
 =================================================
-Educational toy operating system written in pure Python.
-Feels close to real Linux while also supporting many Windows commands.
+Educational toy OS with file-extension support, safe open/run,
+restricted real-Python execution, and many extra features.
 
-Not a real kernel. Runs on top of your actual OS.
+Not a real kernel. Runs on top of your host OS.
 """
 
 import os
@@ -14,8 +14,63 @@ import time
 import random
 import shlex
 import textwrap
+import json
+import traceback
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable, Any
+
+# ============================================================
+# File Extension / Association System
+# ============================================================
+
+class FileAssociation:
+    """Maps extensions to handlers so the OS can check before opening."""
+
+    def __init__(self):
+        # extension -> (description, handler_name, can_execute)
+        self.assoc: Dict[str, tuple] = {
+            ".txt":  ("Plain text",        "text",    False),
+            ".md":   ("Markdown text",     "text",    False),
+            ".log":  ("Log file",          "text",    False),
+            ".py":   ("Python script",     "python",  True),
+            ".pyw":  ("Python script",     "python",  True),
+            ".sh":   ("Shell script",      "shell",   True),
+            ".bash": ("Bash script",       "shell",   True),
+            ".json": ("JSON data",         "json",    False),
+            ".csv":  ("CSV data",          "text",    False),
+            ".cfg":  ("Config file",       "text",    False),
+            ".ini":  ("INI config",        "text",    False),
+            ".html": ("HTML document",     "text",    False),
+            ".htm":  ("HTML document",     "text",    False),
+            "":      ("Unknown / no extension", "unknown", False),
+        }
+
+    def get_ext(self, filename: str) -> str:
+        if "." in filename:
+            return "." + filename.rsplit(".", 1)[-1].lower()
+        return ""
+
+    def info(self, filename: str) -> tuple:
+        ext = self.get_ext(filename)
+        return self.assoc.get(ext, self.assoc[""])
+
+    def can_open(self, filename: str) -> bool:
+        desc, handler, _ = self.info(filename)
+        return handler != "unknown"
+
+    def can_execute(self, filename: str) -> bool:
+        _, _, executable = self.info(filename)
+        return executable
+
+    def list_all(self) -> str:
+        lines = ["Registered file associations:", ""]
+        for ext, (desc, handler, exe) in sorted(self.assoc.items()):
+            if not ext:
+                continue
+            flag = "executable" if exe else "data"
+            lines.append(f"  {ext:<8} {desc:<20} handler={handler:<8} ({flag})")
+        return "\n".join(lines)
+
 
 # ============================================================
 # Virtual Filesystem
@@ -48,7 +103,6 @@ class FileSystem:
     def _build_standard_tree(self):
         r = self.root
 
-        # /bin
         bin_dir = r.add(VFSNode("bin", True, owner="root", mode="755"))
         cmds = [
             "bash", "ls", "cat", "echo", "pwd", "cd", "mkdir", "rm", "cp", "mv",
@@ -56,12 +110,12 @@ class FileSystem:
             "curl", "uname", "whoami", "sudo", "guess", "rps", "hangman",
             "snake", "dice", "fortune", "neofetch", "cowsay", "free", "df",
             "uptime", "dir", "cls", "ipconfig", "tasklist", "systeminfo",
-            "ver", "type", "del", "md", "rd"
+            "ver", "type", "del", "md", "rd", "run", "open", "file", "assoc",
+            "python"
         ]
         for cmd in cmds:
             bin_dir.add(VFSNode(cmd, content=f"#!/bin/sh\n# {cmd}\n", owner="root", mode="755"))
 
-        # /etc
         etc = r.add(VFSNode("etc", True, owner="root", mode="755"))
         etc.add(VFSNode("passwd", content=(
             "root:x:0:0:root:/root:/bin/bash\n"
@@ -70,50 +124,51 @@ class FileSystem:
         ), owner="root", mode="644"))
         etc.add(VFSNode("hostname", content="python-os\n", owner="root", mode="644"))
         etc.add(VFSNode("os-release", content=(
-            'NAME="Python OS"\n'
-            'VERSION="3.1 (Hybrid Linux/Windows)"\n'
-            'ID=pythonos\n'
-            'PRETTY_NAME="Python OS 3.1"\n'
+            'NAME="Python OS"\nVERSION="3.2 (Extensions + Safe Run)"\n'
+            'ID=pythonos\nPRETTY_NAME="Python OS 3.2"\n'
         ), owner="root", mode="644"))
         etc.add(VFSNode("motd", content=(
-            "Python OS 3.1 – Hybrid Linux + Windows simulation\n"
-            "Type 'help' or 'games' to get started.\n"
+            "Python OS 3.2 – Hybrid Linux + Windows + File Extensions\n"
+            "Type 'help', 'games' or 'assoc' to explore.\n"
         ), owner="root", mode="644"))
 
-        # /home
         home = r.add(VFSNode("home", True, owner="root", mode="755"))
         user_home = home.add(VFSNode("user", True, owner="user", mode="755"))
         user_home.add(VFSNode(".bashrc", content="# .bashrc\n", owner="user", mode="644"))
         user_home.add(VFSNode("readme.txt", content=(
-            "Welcome to Python OS 3.1\n"
-            "This is a hybrid Linux/Windows style simulation.\n"
-            "Type 'games' for games or 'help' for commands.\n"
+            "Welcome to Python OS 3.2\n"
+            "File extensions are now supported.\n"
+            "Try:  run hello.py   or   file readme.txt\n"
         ), owner="user", mode="644"))
+
+        # Example Python script that can be executed safely
+        user_home.add(VFSNode("hello.py", content=(
+            "#!/usr/bin/env python3\n"
+            "print('Hello from a real .py file inside Python OS!')\n"
+            "print('2 + 2 =', 2 + 2)\n"
+            "for i in range(3):\n"
+            "    print('  loop', i)\n"
+        ), owner="user", mode="755"))
+
+        user_home.add(VFSNode("data.json", content='{"os": "Python OS", "version": 3.2, "hybrid": true}\n',
+                              owner="user", mode="644"))
 
         home.add(VFSNode("guest", True, owner="guest", mode="755"))
         r.add(VFSNode("root", True, owner="root", mode="700"))
 
-        # /usr
         usr = r.add(VFSNode("usr", True, owner="root", mode="755"))
         usr.add(VFSNode("bin", True, owner="root", mode="755"))
         usr.add(VFSNode("games", True, owner="root", mode="755"))
 
-        # /var + /tmp
         var = r.add(VFSNode("var", True, owner="root", mode="755"))
         var.add(VFSNode("log", True, owner="root", mode="755"))
         r.add(VFSNode("tmp", True, owner="root", mode="1777"))
 
-        # /proc
         proc = r.add(VFSNode("proc", True, owner="root", mode="555"))
-        proc.add(VFSNode("version", content="Python OS 3.1 (Hybrid)\n", owner="root", mode="444"))
-        proc.add(VFSNode("cpuinfo", content=(
-            "processor\t: 0\nmodel name\t: Python Virtual CPU @ 3.4GHz\n"
-        ), owner="root", mode="444"))
-        proc.add(VFSNode("meminfo", content=(
-            "MemTotal:       16384000 kB\nMemFree:         8192000 kB\n"
-        ), owner="root", mode="444"))
+        proc.add(VFSNode("version", content="Python OS 3.2 (Extensions)\n", owner="root", mode="444"))
+        proc.add(VFSNode("cpuinfo", content="processor\t: 0\nmodel name\t: Python Virtual CPU\n", owner="root", mode="444"))
+        proc.add(VFSNode("meminfo", content="MemTotal: 16384000 kB\nMemFree: 8192000 kB\n", owner="root", mode="444"))
 
-        # /dev
         dev = r.add(VFSNode("dev", True, owner="root", mode="755"))
         for d in ["null", "zero", "tty", "random", "urandom"]:
             dev.add(VFSNode(d, content="", owner="root", mode="666"))
@@ -281,14 +336,65 @@ class ProcessManager:
 
 
 # ============================================================
-# Games
+# Restricted Python Execution (connects to real Python safely)
+# ============================================================
+
+def restricted_exec(code: str, filename: str = "<script>") -> None:
+    """
+    Execute Python code with a very limited global namespace.
+    This is how the OS 'connects' to the real Python interpreter
+    without giving a script full host access.
+    """
+    safe_builtins = {
+        "print": print,
+        "len": len,
+        "range": range,
+        "str": str,
+        "int": int,
+        "float": float,
+        "bool": bool,
+        "list": list,
+        "dict": dict,
+        "tuple": tuple,
+        "set": set,
+        "abs": abs,
+        "min": min,
+        "max": max,
+        "sum": sum,
+        "sorted": sorted,
+        "enumerate": enumerate,
+        "zip": zip,
+        "map": map,
+        "filter": filter,
+        "round": round,
+        "isinstance": isinstance,
+        "type": type,
+        "hasattr": hasattr,
+        "getattr": getattr,
+        "None": None,
+        "True": True,
+        "False": False,
+    }
+
+    # Extremely limited globals – no import, no open, no os, no sys, etc.
+    restricted_globals = {"__builtins__": safe_builtins}
+
+    try:
+        compiled = compile(code, filename, "exec")
+        exec(compiled, restricted_globals, {})
+    except Exception as e:
+        print(f"[Python OS] Error while running {filename}:")
+        print(f"  {type(e).__name__}: {e}")
+
+
+# ============================================================
+# Games (unchanged core)
 # ============================================================
 
 class Games:
     @staticmethod
     def guess():
         print("\n=== Number Guessing Game ===")
-        print("I'm thinking of a number between 1 and 100.")
         secret = random.randint(1, 100)
         attempts = 0
         while True:
@@ -300,12 +406,12 @@ class Games:
                 elif guess > secret:
                     print("Too high.")
                 else:
-                    print(f"Correct! You got it in {attempts} attempts.")
+                    print(f"Correct! {attempts} attempts.")
                     break
             except ValueError:
-                print("Please enter a number.")
+                print("Enter a number.")
             except (KeyboardInterrupt, EOFError):
-                print("\nGame aborted.")
+                print("\nAborted.")
                 break
 
     @staticmethod
@@ -314,91 +420,78 @@ class Games:
         options = ["rock", "paper", "scissors"]
         wins = losses = 0
         while True:
-            user = input("rock / paper / scissors (or 'quit'): ").strip().lower()
-            if user in ("quit", "exit", "q"):
+            user = input("rock / paper / scissors (q=quit): ").strip().lower()
+            if user in ("q", "quit", "exit"):
                 break
             if user not in options:
-                print("Invalid choice.")
+                print("Invalid.")
                 continue
             comp = random.choice(options)
             print(f"Computer: {comp}")
             if user == comp:
                 print("Draw!")
-            elif (user == "rock" and comp == "scissors") or \
-                 (user == "paper" and comp == "rock") or \
-                 (user == "scissors" and comp == "paper"):
+            elif (user, comp) in [("rock", "scissors"), ("paper", "rock"), ("scissors", "paper")]:
                 print("You win!")
                 wins += 1
             else:
                 print("You lose!")
                 losses += 1
-            print(f"Score → You: {wins}  Computer: {losses}\n")
+            print(f"Score You:{wins}  PC:{losses}\n")
 
     @staticmethod
     def hangman():
-        words = ["python", "linux", "kernel", "terminal", "filesystem",
-                 "process", "memory", "network", "compiler", "virtual",
-                 "simulation", "hangman", "windows", "hybrid"]
+        words = ["python", "linux", "kernel", "extension", "filesystem",
+                 "process", "hybrid", "windows", "simulation", "restricted"]
         word = random.choice(words)
         guessed = set()
         lives = 7
         print("\n=== Hangman ===")
         while lives > 0:
             display = " ".join(c if c in guessed else "_" for c in word)
-            print(f"\nWord: {display}")
-            print(f"Lives: {lives}  Guessed: {' '.join(sorted(guessed))}")
+            print(f"\nWord: {display}   Lives: {lives}")
             if all(c in guessed for c in word):
-                print(f"\nYou won! The word was: {word}")
+                print(f"You won! → {word}")
                 return
             try:
                 letter = input("Letter: ").strip().lower()
             except (KeyboardInterrupt, EOFError):
-                print("\nAborted.")
                 return
-            if not letter or len(letter) != 1 or not letter.isalpha():
-                print("Enter a single letter.")
+            if len(letter) != 1 or not letter.isalpha():
                 continue
             if letter in guessed:
-                print("Already guessed.")
                 continue
             guessed.add(letter)
             if letter not in word:
                 lives -= 1
-                print("Wrong!")
-        print(f"\nGame over. The word was: {word}")
+        print(f"Game over. Word was: {word}")
 
     @staticmethod
     def snake():
-        print("\n=== Snake (simple text version) ===")
-        print("Controls: w/a/s/d   |   q to quit\n")
-        width, height = 20, 10
-        snake = [(5, 5), (5, 4), (5, 3)]
+        print("\n=== Snake ===  (w/a/s/d, q=quit)")
+        width, height = 18, 9
+        snake = [(4, 4), (4, 3), (4, 2)]
         direction = (0, 1)
         food = (random.randint(0, height-1), random.randint(0, width-1))
         score = 0
-
-        def render():
-            os.system("cls" if os.name == "nt" else "clear")
-            print(f"Score: {score}   (q = quit)")
-            print("+" + "-" * width + "+")
-            for y in range(height):
-                line = "|"
-                for x in range(width):
-                    if (y, x) == snake[0]:
-                        line += "O"
-                    elif (y, x) in snake:
-                        line += "o"
-                    elif (y, x) == food:
-                        line += "*"
-                    else:
-                        line += " "
-                print(line + "|")
-            print("+" + "-" * width + "+")
-
         try:
             while True:
-                render()
-                move = input("Move (w/a/s/d): ").strip().lower()
+                os.system("cls" if os.name == "nt" else "clear")
+                print(f"Score: {score}")
+                print("+" + "-" * width + "+")
+                for y in range(height):
+                    line = "|"
+                    for x in range(width):
+                        if (y, x) == snake[0]:
+                            line += "O"
+                        elif (y, x) in snake:
+                            line += "o"
+                        elif (y, x) == food:
+                            line += "*"
+                        else:
+                            line += " "
+                    print(line + "|")
+                print("+" + "-" * width + "+")
+                move = input("Move: ").strip().lower()
                 if move == "q":
                     break
                 if move == "w" and direction != (1, 0):
@@ -409,20 +502,15 @@ class Games:
                     direction = (0, -1)
                 elif move == "d" and direction != (0, -1):
                     direction = (0, 1)
-
-                head_y, head_x = snake[0]
-                new_head = ((head_y + direction[0]) % height,
-                            (head_x + direction[1]) % width)
-
-                if new_head in snake:
-                    print("You hit yourself! Game over.")
+                hy, hx = snake[0]
+                new = ((hy + direction[0]) % height, (hx + direction[1]) % width)
+                if new in snake:
+                    print("Hit yourself!")
                     break
-
-                snake.insert(0, new_head)
-                if new_head == food:
+                snake.insert(0, new)
+                if new == food:
                     score += 10
-                    food = (random.randint(0, height-1),
-                            random.randint(0, width-1))
+                    food = (random.randint(0, height-1), random.randint(0, width-1))
                 else:
                     snake.pop()
         except (KeyboardInterrupt, EOFError):
@@ -431,54 +519,48 @@ class Games:
 
     @staticmethod
     def dice():
-        print("\n=== Dice Roller ===")
+        print("\n=== Dice ===")
         while True:
             try:
-                n = input("How many dice? (1-10, or q): ").strip()
-                if n.lower() in ("q", "quit", "exit"):
+                n = input("Dice (1-10, q=quit): ").strip()
+                if n.lower() in ("q", "quit"):
                     break
                 n = int(n)
-                if not 1 <= n <= 10:
-                    print("Choose 1-10")
-                    continue
-                results = [random.randint(1, 6) for _ in range(n)]
-                print("Results:", results, "  Total:", sum(results))
+                if 1 <= n <= 10:
+                    res = [random.randint(1, 6) for _ in range(n)]
+                    print(res, "Total:", sum(res))
             except ValueError:
-                print("Enter a number.")
+                pass
             except (KeyboardInterrupt, EOFError):
                 break
 
     @staticmethod
     def fortune():
         fortunes = [
-            "You will find a bug today. It will be your own.",
-            "A clean /tmp is a happy /tmp.",
+            "A clean extension table prevents many crashes.",
+            "Check the file type before you open it.",
+            "Restricted exec is your friend.",
+            "There is no cloud, only other people's computers.",
             "sudo make me a sandwich.",
-            "There is no cloud, just someone else's computer.",
-            "It's not a bug, it's an undocumented feature.",
-            "rm -rf / is the ultimate trust exercise.",
-            "The best code is no code at all.",
-            "You will compile successfully on the first try. (Just kidding.)",
-            "A watched process never exits.",
-            "Kernel panic? More like kernel party.",
-            "Your next commit will break production. Have fun.",
-            "Windows and Linux can live in peace... inside Python.",
+            "Your next .py will run safely.",
+            "Windows and Linux can coexist inside one Python process.",
         ]
         print("\n" + random.choice(fortunes) + "\n")
 
 
 # ============================================================
-# Main OS / Shell
+# Main OS
 # ============================================================
 
 class PythonOS:
     def __init__(self):
         self.fs = FileSystem()
         self.pm = ProcessManager()
+        self.assoc = FileAssociation()
         self.users = {
-            "root":  {"password": "root",  "uid": 0,    "home": "/root"},
-            "user":  {"password": "user",  "uid": 1000, "home": "/home/user"},
-            "guest": {"password": "guest", "uid": 1001, "home": "/home/guest"},
+            "root":  {"uid": 0,    "home": "/root"},
+            "user":  {"uid": 1000, "home": "/home/user"},
+            "guest": {"uid": 1001, "home": "/home/guest"},
         }
         self.current_user = "user"
         self.hostname = "python-os"
@@ -488,19 +570,12 @@ class PythonOS:
             "USER": "user",
             "SHELL": "/bin/bash",
             "TERM": "xterm-256color",
-            "OS": "PythonOS_Hybrid",
         }
         self.history: List[str] = []
         self.aliases = {
-            "ll": "ls -l",
-            "la": "ls -la",
-            "cls": "clear",
-            "dir": "ls -l",
-            "md": "mkdir",
-            "rd": "rm -r",
-            "del": "rm",
-            "type": "cat",
-            "ipconfig": "ifconfig",
+            "ll": "ls -l", "la": "ls -la", "cls": "clear",
+            "dir": "ls -l", "md": "mkdir", "rd": "rm -r",
+            "del": "rm", "type": "cat", "ipconfig": "ifconfig",
             "tasklist": "ps",
         }
         self.running = True
@@ -518,17 +593,15 @@ class PythonOS:
         return f"{self.current_user}@{self.hostname}:{path}{symbol} "
 
     def boot(self):
-        print("\n[  0.000000] Linux version 6.6.0-pythonos (Hybrid Edition)")
-        time.sleep(0.15)
-        print("[  0.412000] Command line: BOOT_IMAGE=/vmlinuz root=UUID=pythonos")
+        print("\n[  0.000000] Linux version 6.6.0-pythonos (Extensions Edition)")
+        time.sleep(0.1)
+        print("[  0.500000] Loading file-association table and restricted Python runtime...")
         time.sleep(0.2)
-        print("[  1.102000] Loading hybrid Linux/Windows compatibility layer...")
-        time.sleep(0.25)
-        print("[  1.890000] Multi-user target reached.")
+        print("[  1.200000] Multi-user target reached.")
         print()
         print(self.fs.cat("/etc/motd"), end="")
-        print(f"Python OS 3.1  {datetime.now().strftime('%a %b %d %H:%M:%S %Y')}")
-        print("Type 'help' or 'games'. Windows commands (dir, cls, ipconfig...) also work.\n")
+        print(f"Python OS 3.2  {datetime.now().strftime('%a %b %d %H:%M:%S %Y')}")
+        print("Extensions enabled. Try:  file hello.py   or   run hello.py\n")
 
         while self.running:
             try:
@@ -540,16 +613,108 @@ class PythonOS:
                 print("\nlogout")
                 break
 
+    # ---------- Safe file handling ----------
+    def safe_open(self, path: str) -> None:
+        """Check extension first, then open appropriately."""
+        node = self.fs.resolve(path)
+        if node is None:
+            print(f"open: {path}: No such file or directory")
+            return
+        if node.is_dir:
+            print(f"open: {path}: Is a directory")
+            return
+
+        desc, handler, executable = self.assoc.info(path)
+
+        if handler == "unknown":
+            print(f"[Python OS] Refused to open '{path}'")
+            print(f"  Reason: unregistered file extension")
+            print(f"  Use 'assoc' to see supported types or 'file {path}' for details.")
+            return
+
+        content = node.content
+
+        if handler == "text":
+            print(content, end="" if content.endswith("\n") else "\n")
+        elif handler == "json":
+            try:
+                data = json.loads(content)
+                print(json.dumps(data, indent=2))
+            except json.JSONDecodeError as e:
+                print(f"Invalid JSON: {e}")
+                print("--- raw content ---")
+                print(content)
+        elif handler == "python":
+            print(f"[Python OS] '{path}' is a Python script.")
+            print("  Use:  run {0}   or   python {0}".format(path))
+        elif handler == "shell":
+            print(f"[Python OS] '{path}' is a shell script (simulated).")
+            print("  Use:  run {0}".format(path))
+        else:
+            print(content)
+
+    def safe_run(self, path: str) -> None:
+        """Check extension + permissions, then execute if allowed."""
+        node = self.fs.resolve(path)
+        if node is None:
+            print(f"run: {path}: No such file or directory")
+            return
+        if node.is_dir:
+            print(f"run: {path}: Is a directory")
+            return
+
+        desc, handler, executable = self.assoc.info(path)
+
+        if not executable:
+            print(f"[Python OS] Cannot execute '{path}'")
+            print(f"  Type: {desc}")
+            print(f"  This extension is not marked as executable.")
+            print(f"  Tip: use 'open {path}' or 'cat {path}' instead.")
+            return
+
+        content = node.content
+
+        # Shebang handling
+        first_line = content.splitlines()[0] if content else ""
+        if first_line.startswith("#!"):
+            if "python" in first_line:
+                handler = "python"
+            elif "bash" in first_line or "sh" in first_line:
+                handler = "shell"
+
+        if handler == "python":
+            print(f"[Python OS] Running {path} with restricted Python interpreter...")
+            print("-" * 50)
+            restricted_exec(content, filename=path)
+            print("-" * 50)
+            print("[Python OS] Script finished.")
+        elif handler == "shell":
+            print(f"[Python OS] Simulating shell script {path}")
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                print(f"+ {line}")
+                # very limited simulation
+                if line.startswith("echo "):
+                    print(line[5:])
+        else:
+            print(f"[Python OS] No runner for handler '{handler}'")
+
     def execute(self, line: str):
         line = line.strip()
         if not line:
             return
         self.history.append(line)
 
-        # Alias expansion
+        # Alias
         first = line.split()[0]
         if first in self.aliases:
             line = self.aliases[first] + line[len(first):]
+
+        # Support ./script.py style
+        if line.startswith("./"):
+            line = "run " + line[2:]
 
         try:
             tokens = shlex.split(line)
@@ -603,7 +768,58 @@ class PythonOS:
             print(f"uid={u['uid']}({self.current_user}) gid={u['uid']}({self.current_user})")
             return
 
-        # ---- File system ----
+        # ---- New extension-aware commands ----
+        if cmd == "file":
+            if not args:
+                print("usage: file <path>")
+                return
+            path = args[0]
+            node = self.fs.resolve(path)
+            if node is None:
+                print(f"{path}: cannot open (No such file)")
+                return
+            if node.is_dir:
+                print(f"{path}: directory")
+                return
+            desc, handler, executable = self.assoc.info(path)
+            print(f"{path}: {desc}")
+            print(f"  handler   : {handler}")
+            print(f"  executable: {'yes' if executable else 'no'}")
+            print(f"  size      : {node.size} bytes")
+            print(f"  owner     : {node.owner}")
+            return
+
+        if cmd == "assoc":
+            print(self.assoc.list_all())
+            return
+
+        if cmd == "open":
+            if not args:
+                print("usage: open <file>")
+                return
+            self.safe_open(args[0])
+            return
+
+        if cmd == "run":
+            if not args:
+                print("usage: run <file>")
+                return
+            self.safe_run(args[0])
+            return
+
+        if cmd == "python":
+            if not args:
+                print("usage: python <file.py>")
+                print("  (runs the file with the restricted Python interpreter)")
+                return
+            path = args[0]
+            if not path.endswith(".py") and not path.endswith(".pyw"):
+                print("[Python OS] Only .py / .pyw files can be passed to 'python'")
+                return
+            self.safe_run(path)
+            return
+
+        # ---- Classic filesystem ----
         if cmd == "pwd":
             print(self.fs.get_absolute_path())
             return
@@ -631,6 +847,7 @@ class PythonOS:
             if not args:
                 print(f"{cmd}: missing file operand")
                 return
+            # Still allow raw cat, but recommend open for safety
             content = self.fs.cat(args[0])
             if content is None:
                 print(f"{cmd}: {args[0]}: No such file or directory")
@@ -678,11 +895,11 @@ class PythonOS:
             return
 
         if cmd == "top":
-            print("top - Python OS  (Ctrl+C to stop)")
+            print("top - Ctrl+C to stop")
             try:
                 while True:
                     os.system("cls" if os.name == "nt" else "clear")
-                    print(f"top - {datetime.now().strftime('%H:%M:%S')}  up {int(time.time()-self.boot_time)}s")
+                    print(f"top - {datetime.now().strftime('%H:%M:%S')}")
                     print(f"{'PID':>6} {'USER':<8} {'%CPU':>5} {'%MEM':>5} COMMAND")
                     for p in sorted(self.pm.list(), key=lambda x: x.cpu, reverse=True):
                         p.cpu = max(0.1, p.cpu + random.uniform(-1.5, 1.5))
@@ -709,38 +926,33 @@ class PythonOS:
         if cmd == "free":
             print("              total        used        free")
             print("Mem:       16384000     8192000     8192000")
-            print("Swap:             0           0           0")
             return
 
         if cmd == "df":
             print("Filesystem     1K-blocks    Used Available Use% Mounted on")
             print("/dev/pythonos   10485760  3145728   7340032  30% /")
-            print("tmpfs            2097152        0   2097152   0% /tmp")
             return
 
         if cmd == "uptime":
             secs = int(time.time() - self.boot_time)
-            print(f" {datetime.now().strftime('%H:%M:%S')} up {secs//60} min,  1 user,  load average: 0.42, 0.35, 0.28")
+            print(f" up {secs//60} min,  1 user")
             return
 
         if cmd in ("neofetch", "screenfetch", "systeminfo"):
             print(textwrap.dedent(f"""
                 {self.current_user}@{self.hostname}
-                OS: Python OS 3.1 (Hybrid Linux/Windows)
-                Host: Virtual Machine
+                OS: Python OS 3.2 (Extensions + Safe Run)
                 Kernel: 6.6.0-pythonos
                 Uptime: {int(time.time()-self.boot_time)} s
                 Shell: bash (simulated)
                 CPU: Python Virtual CPU
                 Memory: 8192 MiB / 16384 MiB
+                Features: file extensions, restricted Python, hybrid commands
             """))
             return
 
         if cmd in ("uname", "ver"):
-            if "-a" in args or cmd == "ver":
-                print(f"PythonOS {self.hostname} 3.1.0-pythonos #1 SMP Hybrid x86_64 GNU/Linux")
-            else:
-                print("PythonOS")
+            print(f"PythonOS {self.hostname} 3.2.0-pythonos #1 SMP Hybrid x86_64")
             return
 
         if cmd == "hostname":
@@ -748,7 +960,7 @@ class PythonOS:
             return
 
         if cmd == "date":
-            print(datetime.now().strftime("%a %b %d %H:%M:%S %Z %Y"))
+            print(datetime.now().strftime("%a %b %d %H:%M:%S %Y"))
             return
 
         if cmd == "history":
@@ -782,43 +994,32 @@ class PythonOS:
         if cmd in ("ifconfig", "ipconfig"):
             print("eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500")
             print("        inet 10.0.2.15  netmask 255.255.255.0")
-            print("        ether 08:00:27:aa:bb:cc")
             return
 
         if cmd == "ping":
             host = args[0] if args else "127.0.0.1"
-            print(f"PING {host} (93.184.216.34) 56(84) bytes of data.")
+            print(f"PING {host}")
             for i in range(4):
-                time.sleep(0.3)
-                print(f"64 bytes from {host}: icmp_seq={i+1} ttl=54 time={random.uniform(8, 40):.1f} ms")
-            print(f"--- {host} ping statistics ---")
-            print("4 packets transmitted, 4 received, 0% packet loss")
+                time.sleep(0.25)
+                print(f"64 bytes from {host}: icmp_seq={i+1} time={random.uniform(8,35):.1f} ms")
             return
 
         if cmd in ("curl", "wget"):
             url = args[0] if args else "http://example.com"
             print(f"* Connected to {url}")
-            time.sleep(0.3)
-            print("HTTP/1.1 200 OK")
             print("<html><body><h1>Python OS simulated page</h1></body></html>")
             return
 
         if cmd == "apt":
             if not args:
-                print("apt 2.7 (pythonos)")
+                print("apt (pythonos)")
                 return
             sub = args[0]
             if sub == "update":
-                print("Hit:1 http://archive.pythonos.org stable InRelease")
                 print("Reading package lists... Done")
-            elif sub == "upgrade":
-                print("0 upgraded, 0 newly installed, 0 to remove.")
             elif sub == "install":
                 for p in args[1:]:
-                    print(f"Installing {p}... done (simulated)")
-            elif sub == "search":
-                print("pythonos-games/stable")
-                print("pythonos-core/stable")
+                    print(f"Installing {p}... done")
             else:
                 print(f"E: Invalid operation {sub}")
             return
@@ -826,13 +1027,7 @@ class PythonOS:
         # ---- Games ----
         if cmd == "games":
             print("""
-Available games:
-  guess     - Number guessing (1-100)
-  rps       - Rock Paper Scissors
-  hangman   - Hangman
-  snake     - Simple text snake
-  dice      - Dice roller
-  fortune   - Random fortune
+Games:  guess  rps  hangman  snake  dice  fortune
 """)
             return
 
@@ -856,7 +1051,7 @@ Available games:
             return
 
         if cmd == "cowsay":
-            msg = " ".join(args) if args else "Moo from hybrid OS"
+            msg = " ".join(args) if args else "Extensions keep us safe"
             print(f"""
   ___________
 < {msg} >
@@ -873,7 +1068,7 @@ Available games:
             if not args:
                 print(f"{cmd}: missing filename")
                 return
-            print(f"--- Simple {cmd} --- (end with a line containing only . )")
+            print(f"--- {cmd} (end with .) ---")
             lines = []
             while True:
                 try:
@@ -889,17 +1084,24 @@ Available games:
 
         if cmd == "help":
             print("""
-Python OS 3.1 – Hybrid Linux + Windows command summary
+Python OS 3.2 – Command summary
 
-Linux style : ls  cd  pwd  cat  mkdir  touch  rm  echo  ps  top  kill
-Windows style: dir  cls  ipconfig  tasklist  systeminfo  ver  type  del  md  rd
-System       : uname  hostname  date  free  df  uptime  neofetch  env
-Users        : whoami  id  su  sudo
-Network      : ifconfig / ipconfig  ping  curl
-Packages     : apt update|upgrade|install|search
-Games        : games  guess  rps  hangman  snake  dice  fortune
-Fun          : cowsay  fortune
-Other        : history  clear/cls  alias  help  exit
+File extensions & safety:
+  file <path>     Show type / extension info
+  assoc           List all registered extensions
+  open <file>     Open safely (checks extension first)
+  run <file>      Execute safely (only allowed extensions)
+  python <file>   Run .py with restricted real Python
+  ./script.py     Same as run script.py
+
+Classic + hybrid:
+  ls / dir   cd   pwd   cat / type   mkdir / md   rm / del
+  ps / tasklist   top   kill   free   df   uptime
+  neofetch / systeminfo   uname / ver
+  ifconfig / ipconfig   ping   curl   apt
+  whoami  id  su  sudo  history  clear / cls
+
+Games: games  guess  rps  hangman  snake  dice  fortune
 """)
             return
 
